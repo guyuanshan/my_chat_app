@@ -1,9 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { requireAuthenticatedUser } from "../auth-service/index.mjs";
+import { findBinding } from "../../repositories/binding-repository.mjs";
 import {
-  createTextMessage,
+  createMessage,
   listConversationMessages,
   listReceiverMessagesSince
 } from "../../repositories/message-repository.mjs";
+
+const MAX_USER_ID_LENGTH = 64;
+const MAX_TEXT_LENGTH = 1000;
+const MAX_EMOJI_LENGTH = 16;
+const MAX_IMAGE_DATA_LENGTH = 350 * 1024;
+const MAX_CONVERSATION_LIMIT = 100;
 
 function normalizeRequiredId(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -14,6 +22,14 @@ function normalizeOptionalId(value) {
 }
 
 function normalizeText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeEmoji(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeImageData(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
@@ -46,6 +62,86 @@ function validateTextMessageInput(senderId, receiverId, text) {
     return "text is required.";
   }
 
+  if (senderId.length > MAX_USER_ID_LENGTH) {
+    return `senderId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (receiverId.length > MAX_USER_ID_LENGTH) {
+    return `receiverId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (text.length > MAX_TEXT_LENGTH) {
+    return `text must be at most ${MAX_TEXT_LENGTH} characters.`;
+  }
+
+  return null;
+}
+
+function validateEmojiMessageInput(senderId, receiverId, emoji) {
+  if (!senderId) {
+    return "senderId is required.";
+  }
+
+  if (!receiverId) {
+    return "receiverId is required.";
+  }
+
+  if (senderId === receiverId) {
+    return "senderId and receiverId must be different.";
+  }
+
+  if (!emoji) {
+    return "emoji is required.";
+  }
+
+  if (senderId.length > MAX_USER_ID_LENGTH) {
+    return `senderId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (receiverId.length > MAX_USER_ID_LENGTH) {
+    return `receiverId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (emoji.length > MAX_EMOJI_LENGTH) {
+    return `emoji must be at most ${MAX_EMOJI_LENGTH} characters.`;
+  }
+
+  return null;
+}
+
+function validateImageMessageInput(senderId, receiverId, imageData) {
+  if (!senderId) {
+    return "senderId is required.";
+  }
+
+  if (!receiverId) {
+    return "receiverId is required.";
+  }
+
+  if (senderId === receiverId) {
+    return "senderId and receiverId must be different.";
+  }
+
+  if (!imageData) {
+    return "imageData is required.";
+  }
+
+  if (senderId.length > MAX_USER_ID_LENGTH) {
+    return `senderId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (receiverId.length > MAX_USER_ID_LENGTH) {
+    return `receiverId must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
+    return "imageData must be a valid image data URL.";
+  }
+
+  if (imageData.length > MAX_IMAGE_DATA_LENGTH) {
+    return `imageData must be at most ${MAX_IMAGE_DATA_LENGTH} characters.`;
+  }
+
   return null;
 }
 
@@ -71,8 +167,20 @@ function validateConversationQueryInput(userA, userB, limit) {
     return "userA and userB must be different.";
   }
 
+  if (userA.length > MAX_USER_ID_LENGTH) {
+    return `userA must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
+  if (userB.length > MAX_USER_ID_LENGTH) {
+    return `userB must be at most ${MAX_USER_ID_LENGTH} characters.`;
+  }
+
   if (!Number.isInteger(limit) || limit <= 0) {
     return "limit must be a positive integer.";
+  }
+
+  if (limit > MAX_CONVERSATION_LIMIT) {
+    return `limit must be at most ${MAX_CONVERSATION_LIMIT}.`;
   }
 
   return null;
@@ -81,6 +189,10 @@ function validateConversationQueryInput(userA, userB, limit) {
 function validatePollQueryInput(receiverId, since) {
   if (!receiverId) {
     return "receiverId is required.";
+  }
+
+  if (receiverId.length > MAX_USER_ID_LENGTH) {
+    return `receiverId must be at most ${MAX_USER_ID_LENGTH} characters.`;
   }
 
   if (since && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,3})?$/.test(since)) {
@@ -94,11 +206,27 @@ function createServerTimestamp(date = new Date()) {
   return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
-export async function sendTextMessage(input) {
-  const senderId = normalizeRequiredId(input.senderId);
+export async function sendTextMessage(input, authContext) {
+  const authResult = requireAuthenticatedUser(authContext);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const senderId = normalizeRequiredId(input.senderId || authResult.userId);
   const receiverId = normalizeRequiredId(input.receiverId);
   const text = normalizeText(input.text);
   const clientMessageId = normalizeOptionalId(input.clientMessageId);
+
+  if (senderId !== authResult.userId) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "FORBIDDEN_USER_CONTEXT",
+      message: "senderId must match the authenticated user."
+    };
+  }
+
   const validationError = validateTextMessageInput(senderId, receiverId, text);
 
   if (validationError) {
@@ -110,11 +238,23 @@ export async function sendTextMessage(input) {
     };
   }
 
-  const message = await createTextMessage({
+  const binding = await findBinding(senderId, receiverId);
+
+  if (!binding) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "BINDING_REQUIRED",
+      message: "senderId must bind receiverId before sending messages."
+    };
+  }
+
+  const message = await createMessage({
     messageId: randomUUID(),
     conversationId: createConversationId(senderId, receiverId),
     senderId,
     receiverId,
+    type: "text",
     text,
     clientMessageId,
     sentAt: createServerTimestamp()
@@ -131,9 +271,155 @@ export async function sendTextMessage(input) {
   };
 }
 
-export async function pollMessages(query) {
-  const receiverId = normalizeRequiredId(query.receiverId);
+export async function sendEmojiMessage(input, authContext) {
+  const authResult = requireAuthenticatedUser(authContext);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const senderId = normalizeRequiredId(input.senderId || authResult.userId);
+  const receiverId = normalizeRequiredId(input.receiverId);
+  const emoji = normalizeEmoji(input.emoji);
+  const clientMessageId = normalizeOptionalId(input.clientMessageId);
+
+  if (senderId !== authResult.userId) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "FORBIDDEN_USER_CONTEXT",
+      message: "senderId must match the authenticated user."
+    };
+  }
+
+  const validationError = validateEmojiMessageInput(senderId, receiverId, emoji);
+
+  if (validationError) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: "INVALID_EMOJI_MESSAGE_INPUT",
+      message: validationError
+    };
+  }
+
+  const binding = await findBinding(senderId, receiverId);
+
+  if (!binding) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "BINDING_REQUIRED",
+      message: "senderId must bind receiverId before sending messages."
+    };
+  }
+
+  const message = await createMessage({
+    messageId: randomUUID(),
+    conversationId: createConversationId(senderId, receiverId),
+    senderId,
+    receiverId,
+    type: "emoji",
+    emoji,
+    clientMessageId,
+    sentAt: createServerTimestamp()
+  });
+
+  return {
+    ok: true,
+    statusCode: 201,
+    data: {
+      messageId: message.messageId,
+      sentAt: message.sentAt,
+      status: message.status
+    }
+  };
+}
+
+export async function sendImageMessage(input, authContext) {
+  const authResult = requireAuthenticatedUser(authContext);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const senderId = normalizeRequiredId(input.senderId || authResult.userId);
+  const receiverId = normalizeRequiredId(input.receiverId);
+  const imageData = normalizeImageData(input.imageData);
+  const clientMessageId = normalizeOptionalId(input.clientMessageId);
+
+  if (senderId !== authResult.userId) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "FORBIDDEN_USER_CONTEXT",
+      message: "senderId must match the authenticated user."
+    };
+  }
+
+  const validationError = validateImageMessageInput(senderId, receiverId, imageData);
+
+  if (validationError) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: "INVALID_IMAGE_MESSAGE_INPUT",
+      message: validationError
+    };
+  }
+
+  const binding = await findBinding(senderId, receiverId);
+
+  if (!binding) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "BINDING_REQUIRED",
+      message: "senderId must bind receiverId before sending messages."
+    };
+  }
+
+  const message = await createMessage({
+    messageId: randomUUID(),
+    conversationId: createConversationId(senderId, receiverId),
+    senderId,
+    receiverId,
+    type: "image",
+    imageData,
+    clientMessageId,
+    sentAt: createServerTimestamp()
+  });
+
+  return {
+    ok: true,
+    statusCode: 201,
+    data: {
+      messageId: message.messageId,
+      sentAt: message.sentAt,
+      status: message.status
+    }
+  };
+}
+
+export async function pollMessages(query, authContext) {
+  const authResult = requireAuthenticatedUser(authContext);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const receiverId = normalizeRequiredId(query.receiverId || authResult.userId);
   const since = normalizeSince(query.since);
+
+  if (receiverId !== authResult.userId) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "FORBIDDEN_USER_CONTEXT",
+      message: "receiverId must match the authenticated user."
+    };
+  }
+
   const validationError = validatePollQueryInput(receiverId, since);
 
   if (validationError) {
@@ -145,22 +431,39 @@ export async function pollMessages(query) {
     };
   }
 
-  const items = await listReceiverMessagesSince(receiverId, since);
+  const pollStartedAt = createServerTimestamp();
+  const items = await listReceiverMessagesSince(receiverId, since, pollStartedAt);
 
   return {
     ok: true,
     statusCode: 200,
     data: {
       items,
-      serverTime: createServerTimestamp()
+      serverTime: pollStartedAt
     }
   };
 }
 
-export async function getConversationMessages(query) {
+export async function getConversationMessages(query, authContext) {
+  const authResult = requireAuthenticatedUser(authContext);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
   const userA = normalizeRequiredId(query.userA);
   const userB = normalizeRequiredId(query.userB);
   const limit = normalizeLimit(query.limit);
+
+  if (userA !== authResult.userId && userB !== authResult.userId) {
+    return {
+      ok: false,
+      statusCode: 403,
+      code: "FORBIDDEN_USER_CONTEXT",
+      message: "The authenticated user must be part of the conversation."
+    };
+  }
+
   const validationError = validateConversationQueryInput(userA, userB, limit);
 
   if (validationError) {

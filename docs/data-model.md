@@ -26,7 +26,7 @@ Binding {
 
 ## Message
 
-用于表达两个固定用户之间的一条文本消息。
+用于表达两个固定用户之间的一条消息，当前支持文本、图片和表情。
 
 ```text
 Message {
@@ -34,8 +34,10 @@ Message {
   conversationId: string
   senderId: string
   receiverId: string
-  type: "text"
-  text: string
+  type: "text" | "image" | "emoji"
+  text?: string
+  imageData?: string
+  emoji?: string
   clientMessageId?: string
   sentAt: datetime
   status: "sent"
@@ -47,8 +49,10 @@ Message {
 - `senderId` 必填
 - `receiverId` 必填
 - `senderId` 不能等于 `receiverId`
-- `type` 当前只支持 `text`
-- `text` 必填，且不能为空字符串
+- `type` 当前支持 `text`、`image`、`emoji`
+- `text` 消息必须提供非空 `text`
+- `image` 消息必须提供合法图片 data URL 形式的 `imageData`
+- `emoji` 消息必须提供非空 `emoji`
 - `status` 当前固定为 `sent`
 - `clientMessageId` 是预留字段，暂未用于去重
 
@@ -74,5 +78,5 @@ createConversationId("user_a", "user_b") => "dm:user_a:user_b"
 说明：
 
 - 两个用户 ID 相同不是合法会话
-- 当前没有登录态，调用方传入的 userId 暂不做身份真实性校验
+- 当前已接入最小登录态，服务端会校验消息与查询里的用户上下文
 - 该规则只用于双人会话，不支持群聊

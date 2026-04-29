@@ -1,17 +1,6 @@
--- Current minimal schema for the two-person chat min loop.
--- Step 2 only defines data shape. It does not implement API or repository logic.
+-- Step extension: support image and emoji messages on top of the min loop.
 
-CREATE TABLE IF NOT EXISTS bindings (
-  binding_id TEXT PRIMARY KEY,
-  owner_id TEXT NOT NULL,
-  target_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status = 'active'),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CHECK (owner_id <> target_id),
-  UNIQUE (owner_id, target_id)
-);
-
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS messages_v2 (
   message_id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
   sender_id TEXT NOT NULL,
@@ -31,10 +20,39 @@ CREATE TABLE IF NOT EXISTS messages (
   )
 );
 
--- Supports fetching the latest messages in one conversation.
+INSERT INTO messages_v2 (
+  message_id,
+  conversation_id,
+  sender_id,
+  receiver_id,
+  type,
+  text,
+  image_data,
+  emoji,
+  client_message_id,
+  sent_at,
+  status
+)
+SELECT
+  message_id,
+  conversation_id,
+  sender_id,
+  receiver_id,
+  type,
+  text,
+  NULL AS image_data,
+  NULL AS emoji,
+  client_message_id,
+  sent_at,
+  status
+FROM messages;
+
+DROP TABLE messages;
+
+ALTER TABLE messages_v2 RENAME TO messages;
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_sent_at
   ON messages (conversation_id, sent_at);
 
--- Supports polling new messages for one receiver.
 CREATE INDEX IF NOT EXISTS idx_messages_receiver_sent_at
   ON messages (receiver_id, sent_at);

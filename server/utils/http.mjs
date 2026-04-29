@@ -3,7 +3,7 @@ export function sendJson(response, statusCode, body) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "http://127.0.0.1:5173",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   });
   response.end(JSON.stringify(body));
 }
@@ -29,7 +29,7 @@ export function sendNoContent(response) {
   response.writeHead(204, {
     "Access-Control-Allow-Origin": "http://127.0.0.1:5173",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   });
   response.end();
 }

@@ -8,7 +8,7 @@ export interface Binding {
   createdAt: string;
 }
 
-export type MessageType = "text";
+export type MessageType = "text" | "image" | "emoji";
 export type MessageStatus = "sent";
 
 export interface Message {
@@ -17,7 +17,9 @@ export interface Message {
   senderId: string;
   receiverId: string;
   type: MessageType;
-  text: string;
+  text?: string;
+  imageData?: string;
+  emoji?: string;
   /** Reserved for future client-side retry/deduplication. Temporarily unused. */
   clientMessageId?: string;
   sentAt: string;

@@ -11,14 +11,16 @@ function toMessage(row) {
     senderId: row.sender_id,
     receiverId: row.receiver_id,
     type: row.type,
-    text: row.text,
+    text: row.text || undefined,
+    imageData: row.image_data || undefined,
+    emoji: row.emoji || undefined,
     clientMessageId: row.client_message_id || undefined,
     sentAt: row.sent_at,
     status: row.status
   };
 }
 
-export async function createTextMessage(message) {
+export async function createMessage(message) {
   await runSql(`
     INSERT INTO messages (
       message_id,
@@ -27,6 +29,8 @@ export async function createTextMessage(message) {
       receiver_id,
       type,
       text,
+      image_data,
+      emoji,
       client_message_id,
       sent_at,
       status
@@ -36,8 +40,10 @@ export async function createTextMessage(message) {
       ${sqlString(message.conversationId)},
       ${sqlString(message.senderId)},
       ${sqlString(message.receiverId)},
-      'text',
-      ${sqlString(message.text)},
+      ${sqlString(message.type)},
+      ${message.text ? sqlString(message.text) : "NULL"},
+      ${message.imageData ? sqlString(message.imageData) : "NULL"},
+      ${message.emoji ? sqlString(message.emoji) : "NULL"},
       ${message.clientMessageId ? sqlString(message.clientMessageId) : "NULL"},
       ${sqlString(message.sentAt)},
       'sent'
@@ -52,6 +58,8 @@ export async function createTextMessage(message) {
       receiver_id,
       type,
       text,
+      image_data,
+      emoji,
       client_message_id,
       sent_at,
       status
@@ -72,6 +80,8 @@ export async function listConversationMessages(conversationId, limit) {
       receiver_id,
       type,
       text,
+      image_data,
+      emoji,
       client_message_id,
       sent_at,
       status
@@ -84,8 +94,9 @@ export async function listConversationMessages(conversationId, limit) {
   return rows.map(toMessage);
 }
 
-export async function listReceiverMessagesSince(receiverId, since) {
+export async function listReceiverMessagesSince(receiverId, since, until) {
   const sinceClause = since ? `AND sent_at > ${sqlString(since)}` : "";
+  const untilClause = until ? `AND sent_at <= ${sqlString(until)}` : "";
   const rows = await querySql(`
     SELECT
       message_id,
@@ -94,12 +105,15 @@ export async function listReceiverMessagesSince(receiverId, since) {
       receiver_id,
       type,
       text,
+      image_data,
+      emoji,
       client_message_id,
       sent_at,
       status
     FROM messages
     WHERE receiver_id = ${sqlString(receiverId)}
       ${sinceClause}
+      ${untilClause}
     ORDER BY sent_at ASC, rowid ASC;
   `);
 

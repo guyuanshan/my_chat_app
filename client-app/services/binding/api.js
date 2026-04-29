@@ -1,11 +1,12 @@
-const API_BASE_URL = "http://127.0.0.1:3000";
+import { createAuthHeaders } from "../auth/session.js";
+import { API_BASE_URL } from "../../config/api.js";
 
 export async function createBinding(payload) {
   const response = await fetch(`${API_BASE_URL}/bindings`, {
     method: "POST",
-    headers: {
+    headers: createAuthHeaders({
       "Content-Type": "application/json"
-    },
+    }),
     body: JSON.stringify(payload)
   });
 

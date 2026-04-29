@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import { handleBindingRoute } from "./api/binding/routes.mjs";
 import { handleMessageRoute } from "./api/messages/routes.mjs";
+import { handleSessionRoute } from "./api/session/routes.mjs";
+import { getSessionFromRequest } from "./modules/auth-service/index.mjs";
 import { initializeDatabase } from "./repositories/sqlite-client.mjs";
 import { sendError, sendJson, sendNoContent } from "./utils/http.mjs";
 
@@ -9,6 +11,7 @@ const host = process.env.SERVER_HOST || "127.0.0.1";
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
+  const authContext = getSessionFromRequest(request);
 
   try {
     if (request.method === "OPTIONS") {
@@ -24,11 +27,15 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (await handleBindingRoute(request, response, url)) {
+    if (await handleSessionRoute(request, response, url, authContext)) {
       return;
     }
 
-    if (await handleMessageRoute(request, response, url)) {
+    if (await handleBindingRoute(request, response, url, authContext)) {
+      return;
+    }
+
+    if (await handleMessageRoute(request, response, url, authContext)) {
       return;
     }
 

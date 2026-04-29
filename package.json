@@ -1,0 +1,11 @@
+{
+  "name": "two-person-chat-min-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:client": "node client-app/dev-server.mjs",
+    "dev:server": "node server/index.mjs",
+    "check": "node --check client-app/dev-server.mjs && node --check server/index.mjs"
+  }
+}

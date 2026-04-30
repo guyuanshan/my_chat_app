@@ -16,7 +16,8 @@ function toMessage(row) {
     emoji: row.emoji || undefined,
     clientMessageId: row.client_message_id || undefined,
     sentAt: row.sent_at,
-    status: row.status
+    status: row.status,
+    rowId: Number(row.row_id)
   };
 }
 
@@ -62,7 +63,8 @@ export async function createMessage(message) {
       emoji,
       client_message_id,
       sent_at,
-      status
+      status,
+      rowid AS row_id
     FROM messages
     WHERE message_id = ${sqlString(message.messageId)}
     LIMIT 1;
@@ -71,7 +73,15 @@ export async function createMessage(message) {
   return toMessage(rows[0]);
 }
 
-export async function listConversationMessages(conversationId, limit) {
+export async function listConversationMessages(conversationId, limit, cursor) {
+  const cursorClause = cursor
+    ? `
+      AND (
+        sent_at < ${sqlString(cursor.sentAt)}
+        OR (sent_at = ${sqlString(cursor.sentAt)} AND rowid < ${Number(cursor.rowId)})
+      )
+    `
+    : "";
   const rows = await querySql(`
     SELECT
       message_id,
@@ -84,9 +94,11 @@ export async function listConversationMessages(conversationId, limit) {
       emoji,
       client_message_id,
       sent_at,
-      status
+      status,
+      rowid AS row_id
     FROM messages
     WHERE conversation_id = ${sqlString(conversationId)}
+      ${cursorClause}
     ORDER BY sent_at DESC, rowid DESC
     LIMIT ${Number(limit)};
   `);
@@ -109,7 +121,8 @@ export async function listReceiverMessagesSince(receiverId, since, until) {
       emoji,
       client_message_id,
       sent_at,
-      status
+      status,
+      rowid AS row_id
     FROM messages
     WHERE receiver_id = ${sqlString(receiverId)}
       ${sinceClause}
@@ -118,4 +131,24 @@ export async function listReceiverMessagesSince(receiverId, since, until) {
   `);
 
   return rows.map(toMessage);
+}
+
+export async function deleteMessagesBefore(thresholdSentAt) {
+  const rows = await querySql(`
+    SELECT COUNT(*) AS total
+    FROM messages
+    WHERE sent_at < ${sqlString(thresholdSentAt)};
+  `);
+  const total = Number(rows[0]?.total || 0);
+
+  if (total === 0) {
+    return 0;
+  }
+
+  await runSql(`
+    DELETE FROM messages
+    WHERE sent_at < ${sqlString(thresholdSentAt)};
+  `);
+
+  return total;
 }

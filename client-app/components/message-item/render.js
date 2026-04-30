@@ -7,8 +7,27 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function formatMessageTime(sentAt) {
+  if (!sentAt) {
+    return "";
+  }
+
+  const date = new Date(sentAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
 export function renderMessageItem(message) {
   const directionClass = message.direction === "outgoing" ? "message-item--outgoing" : "message-item--incoming";
+  const senderLabel = message.direction === "outgoing" ? "我" : "对方";
+  const timestamp = formatMessageTime(message.sentAt);
   let content = "";
 
   if (message.type === "image") {
@@ -29,6 +48,10 @@ export function renderMessageItem(message) {
 
   return `
     <article class="message-item ${directionClass}">
+      <div class="message-item__meta">
+        <span class="message-item__sender">${senderLabel}</span>
+        <span class="message-item__time">${timestamp}</span>
+      </div>
       ${content}
     </article>
   `;

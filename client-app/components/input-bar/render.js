@@ -12,13 +12,14 @@ export function renderInputBar(state) {
 
   return `
     <form class="input-bar">
+      <div class="input-bar__hint">按下发送，把这一刻传过去。</div>
       ${renderSendFeedback(state)}
       <input
         class="input-bar__field"
         type="text"
         name="text"
         value="${state.composerText}"
-        placeholder="输入消息"
+        placeholder="输入一条想说的话..."
         autocomplete="off"
         ${disabled}
       />

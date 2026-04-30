@@ -7,9 +7,13 @@
 - 可发送文本消息
 - 可发送图片消息
 - 可发送表情消息
+- 图片发送前支持前端自动压缩
 - 消息写入数据库
 - 接收方可通过轮询拿到新消息
 - 页面默认展示最近 10 条消息
+- 历史消息支持分页加载更多
+- 当前会话已支持页内通知
+- 服务端已支持 30 天老消息定时清理
 - 刷新后历史消息仍可重建
 
 ## 当前范围
@@ -19,7 +23,7 @@
 - database：数据库 schema 与 migration 目录
 - docs：系统骨架说明目录
 
-暂未实现通知、分页、30 天清理、会话列表等完整版能力。
+暂未实现会话列表、已读回执、撤回、系统推送等完整版能力。
 
 ## 运行环境
 
@@ -58,6 +62,24 @@ npm run dev:client
 http://127.0.0.1:5173
 ```
 
+局域网访问示例：
+
+```bash
+CLIENT_HOST=0.0.0.0 npm run dev:client
+```
+
+前端现在会按以下顺序决定 API 地址：
+
+1. 先读取运行时注入的 `globalThis.__CHAT_APP_CONFIG__.apiBaseUrl`
+2. 若未注入，则按当前页面主机名自动推导为 `http(s)://当前主机:3000`
+3. 若仍无法推导，再回退到 `http://127.0.0.1:3000`
+
+如果需要手动指定后端地址，可直接在启动前端时注入：
+
+```bash
+CLIENT_API_BASE_URL=http://192.168.1.20:3000 npm run dev:client
+```
+
 ## 启动后端
 
 ```bash
@@ -68,6 +90,18 @@ npm run dev:server
 
 ```text
 http://127.0.0.1:3000
+```
+
+局域网访问示例：
+
+```bash
+SERVER_HOST=0.0.0.0 npm run dev:server
+```
+
+如果前端和后端不再同源，后端可通过下面变量放开允许来源：
+
+```bash
+CORS_ALLOW_ORIGIN=* npm run dev:server
 ```
 
 健康检查：
@@ -117,6 +151,11 @@ database/app.db
 - `GET /messages/conversation`
 - `GET /messages/poll`
 
+说明：
+
+- `GET /messages/conversation` 当前已支持分页参数 `cursor`
+- 返回体包含 `items`、`nextCursor`、`hasMore`
+
 ## 当前安全与校验规则
 
 - 访问绑定、发消息、查消息、轮询接口前，必须先登录
@@ -130,12 +169,14 @@ database/app.db
 - `GET /messages/conversation` 的 `limit` 最大为 `100`
 - 文本与表情请求体最大为 `16 KB`
 - 图片请求体最大为 `512 KB`
+- 前端会在发送图片前自动缩放并压缩，目标体积约为 `220 KB`
+- 服务端会在启动后执行 30 天消息清理，并按固定间隔继续清理
 
 ## 当前已知限制
 
 - 当前只支持固定开发账号
 - 会话保存在服务端进程内存中，服务重启后需要重新登录
-- 前端 API 地址默认仍指向 `http://127.0.0.1:3000`，但已收口到统一配置模块
+- 当前仍未切到相对路径 `/api` 和反向代理方案，跨环境部署时还需要显式管理前后端地址
 - 完整限制见 [limited.md](/Users/sweet_77/Documents/New%20project/limited.md)
 
 ## 最小手工验证
@@ -186,6 +227,7 @@ user_b
 - 新消息立即追加到当前列表底部
 - 图片消息会显示图片预览
 - 表情消息会以独立表情样式展示
+- 选择较大的图片时，页面会先提示正在压缩，再发送
 
 8. 刷新页面
 
@@ -193,6 +235,45 @@ user_b
 
 - 页面恢复上次绑定的目标用户
 - 历史消息重新加载
+
+9. 点击“加载更多消息”
+
+预期：
+
+- 可继续看到更早的历史消息
+- 没有更多消息时按钮会变为不可用
+
+10. 让对方发送一条新消息
+
+预期：
+
+- 当前页面会出现页内通知
+- 如果页面处于后台，标题会显示未读计数
+
+## 局域网最小验证
+
+1. 在服务端机器上启动后端：
+
+```bash
+SERVER_HOST=0.0.0.0 CORS_ALLOW_ORIGIN=* npm run dev:server
+```
+
+2. 在同一台机器上启动前端：
+
+```bash
+CLIENT_HOST=0.0.0.0 npm run dev:client
+```
+
+3. 在局域网另一台设备访问：
+
+```text
+http://<服务端机器局域网 IP>:5173
+```
+
+预期：
+
+- 前端会自动把 API 地址推导为 `http://<服务端机器局域网 IP>:3000`
+- 登录、绑定、发消息、轮询收消息都能正常工作
 
 ## 最小接口验证
 
@@ -244,6 +325,11 @@ curl -s -X POST http://127.0.0.1:3000/messages/image \
   -d '{"senderId":"user_a","receiverId":"user_b","imageData":"data:image/png;base64,<base64>"}'
 ```
 
+说明：
+
+- 浏览器端图片发送已支持自动压缩
+- 建议优先通过前端页面验证图片发送链路，而不是手工拼接大体积 base64
+
 ### 6. 查询最近消息
 
 ```bash
@@ -251,7 +337,16 @@ curl -s 'http://127.0.0.1:3000/messages/conversation?userA=user_a&userB=user_b&l
   -H 'Authorization: Bearer <token>'
 ```
 
-### 7. 轮询新消息
+### 7. 查询更早一页历史
+
+先取第一页响应里的 `nextCursor`，再带入下一次请求：
+
+```bash
+curl -s 'http://127.0.0.1:3000/messages/conversation?userA=user_a&userB=user_b&limit=10&cursor=<nextCursor>' \
+  -H 'Authorization: Bearer <token>'
+```
+
+### 8. 轮询新消息
 
 ```bash
 curl -s 'http://127.0.0.1:3000/messages/poll?receiverId=user_b&since=2000-01-01%2000:00:00.000' \
@@ -302,4 +397,12 @@ curl -s -X POST http://127.0.0.1:3000/messages/text \
 
 ```json
 {"ok":false,"error":{"code":"INVALID_IMAGE_MESSAGE_INPUT","message":"imageData must be a valid image data URL."}}
+```
+
+### 5. 图片压缩后仍然过大
+
+前端预期提示：
+
+```text
+图片压缩后仍然过大，请换一张更小的图片。
 ```

@@ -37,6 +37,10 @@ function normalizeSince(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeCursor(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 export function createConversationId(userAInput, userBInput) {
   const userA = normalizeRequiredId(userAInput);
   const userB = normalizeRequiredId(userBInput);
@@ -154,7 +158,7 @@ function normalizeLimit(value) {
   return Number.isNaN(parsed) ? NaN : parsed;
 }
 
-function validateConversationQueryInput(userA, userB, limit) {
+function validateConversationQueryInput(userA, userB, limit, cursor) {
   if (!userA) {
     return "userA is required.";
   }
@@ -183,7 +187,41 @@ function validateConversationQueryInput(userA, userB, limit) {
     return `limit must be at most ${MAX_CONVERSATION_LIMIT}.`;
   }
 
+  if (cursor) {
+    try {
+      decodeConversationCursor(cursor);
+    } catch {
+      return "cursor is invalid.";
+    }
+  }
+
   return null;
+}
+
+function encodeConversationCursor(message) {
+  return Buffer.from(JSON.stringify({
+    sentAt: message.sentAt,
+    rowId: message.rowId
+  }), "utf8").toString("base64url");
+}
+
+function decodeConversationCursor(cursor) {
+  const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+
+  if (
+    !parsed ||
+    typeof parsed.sentAt !== "string" ||
+    !parsed.sentAt ||
+    !Number.isInteger(parsed.rowId) ||
+    parsed.rowId <= 0
+  ) {
+    throw new Error("INVALID_CURSOR");
+  }
+
+  return {
+    sentAt: parsed.sentAt,
+    rowId: parsed.rowId
+  };
 }
 
 function validatePollQueryInput(receiverId, since) {
@@ -438,7 +476,7 @@ export async function pollMessages(query, authContext) {
     ok: true,
     statusCode: 200,
     data: {
-      items,
+      items: items.map(stripMessageRowId),
       serverTime: pollStartedAt
     }
   };
@@ -454,6 +492,7 @@ export async function getConversationMessages(query, authContext) {
   const userA = normalizeRequiredId(query.userA);
   const userB = normalizeRequiredId(query.userB);
   const limit = normalizeLimit(query.limit);
+  const cursor = normalizeCursor(query.cursor);
 
   if (userA !== authResult.userId && userB !== authResult.userId) {
     return {
@@ -464,7 +503,7 @@ export async function getConversationMessages(query, authContext) {
     };
   }
 
-  const validationError = validateConversationQueryInput(userA, userB, limit);
+  const validationError = validateConversationQueryInput(userA, userB, limit, cursor);
 
   if (validationError) {
     return {
@@ -476,13 +515,38 @@ export async function getConversationMessages(query, authContext) {
   }
 
   const conversationId = createConversationId(userA, userB);
-  const items = await listConversationMessages(conversationId, limit);
+  const items = await listConversationMessages(
+    conversationId,
+    limit + 1,
+    cursor ? decodeConversationCursor(cursor) : undefined
+  );
+  const hasMore = items.length > limit;
+  const pageItems = hasMore ? items.slice(0, limit) : items;
+  const nextCursor = hasMore ? encodeConversationCursor(pageItems[pageItems.length - 1]) : null;
 
   return {
     ok: true,
     statusCode: 200,
     data: {
-      items: items.reverse()
+      items: pageItems.reverse().map(stripMessageRowId),
+      nextCursor,
+      hasMore
     }
+  };
+}
+
+function stripMessageRowId(message) {
+  return {
+    messageId: message.messageId,
+    conversationId: message.conversationId,
+    senderId: message.senderId,
+    receiverId: message.receiverId,
+    type: message.type,
+    text: message.text,
+    imageData: message.imageData,
+    emoji: message.emoji,
+    clientMessageId: message.clientMessageId,
+    sentAt: message.sentAt,
+    status: message.status
   };
 }

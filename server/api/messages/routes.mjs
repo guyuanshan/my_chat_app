@@ -28,7 +28,8 @@ export async function handleMessageRoute(request, response, url, authContext) {
     const result = await getConversationMessages({
       userA: url.searchParams.get("userA"),
       userB: url.searchParams.get("userB"),
-      limit: url.searchParams.get("limit")
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor")
     }, authContext);
 
     if (!result.ok) {

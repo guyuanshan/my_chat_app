@@ -58,9 +58,9 @@ function renderBindingEntry(state) {
   return `
     <section class="binding-entry" aria-label="绑定入口">
       <div class="binding-entry__meta">
-        <div class="binding-entry__label">当前登录用户 ID</div>
+        <div class="binding-entry__eyebrow">连接聊天对象</div>
         <div class="binding-entry__value">${state.currentUserId}</div>
-        <div class="binding-entry__tip">双端验证可另开标签页访问 /?user=user_a 或 /?user=user_b。</div>
+        <div class="binding-entry__tip">先选择要聊天的对象，绑定成功后就能开始同步历史消息和新消息。</div>
       </div>
       <form class="binding-entry__form">
         <input
@@ -78,13 +78,48 @@ function renderBindingEntry(state) {
   `;
 }
 
+function renderChatHero(state) {
+  const partnerName = state.targetUserId || "等待绑定";
+  const title = state.isBound ? `正在和 ${partnerName} 聊天` : "先绑定，再开始对话";
+  const subtitle = state.isBound
+    ? "消息会自动同步，图片、表情和历史记录都会保留在当前会话里。"
+    : "绑定完成后，这里会自动进入你们的专属消息流。";
+  const statusToneClass = state.isBound ? "chat-hero__status--active" : "";
+  const statusText = state.isBound ? "已连接" : "待连接";
+  const selfInitial = (state.currentUserId || "?").slice(0, 1).toUpperCase();
+  const partnerInitial = partnerName.slice(0, 1).toUpperCase();
+
+  return `
+    <section class="chat-hero" aria-label="会话概览">
+      <div class="chat-hero__copy">
+        <p class="chat-hero__eyebrow">双人聊天空间</p>
+        <h2 class="chat-hero__title">${title}</h2>
+        <p class="chat-hero__subtitle">${subtitle}</p>
+      </div>
+      <div class="chat-hero__panel">
+        <div class="chat-hero__avatars" aria-hidden="true">
+          <span class="chat-hero__avatar chat-hero__avatar--self">${selfInitial}</span>
+          <span class="chat-hero__avatar chat-hero__avatar--partner">${partnerInitial}</span>
+        </div>
+        <div class="chat-hero__details">
+          <div class="chat-hero__name">${state.currentUserId} · ${partnerName}</div>
+          <div class="chat-hero__status ${statusToneClass}">${statusText}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 export function renderChatPage(state) {
   const authenticatedContent = state.isAuthenticated
     ? `
-        ${renderQuickActions(state)}
-        ${renderBindingEntry(state)}
-        ${renderMessageList(state)}
-        ${renderInputBar(state)}
+        <section class="chat-page__body" aria-label="聊天主区域">
+          ${renderChatHero(state)}
+          ${renderQuickActions(state)}
+          ${renderBindingEntry(state)}
+          ${renderMessageList(state)}
+          ${renderInputBar(state)}
+        </section>
       `
     : `
         ${renderAuthEntry(state)}

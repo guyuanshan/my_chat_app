@@ -3,6 +3,7 @@ import { handleBindingRoute } from "./api/binding/routes.mjs";
 import { handleMessageRoute } from "./api/messages/routes.mjs";
 import { handleSessionRoute } from "./api/session/routes.mjs";
 import { getSessionFromRequest } from "./modules/auth-service/index.mjs";
+import { startMessageRetentionScheduler } from "./modules/message-retention-service/index.mjs";
 import { initializeDatabase } from "./repositories/sqlite-client.mjs";
 import { sendError, sendJson, sendNoContent } from "./utils/http.mjs";
 
@@ -46,6 +47,7 @@ const server = createServer(async (request, response) => {
 });
 
 await initializeDatabase();
+startMessageRetentionScheduler();
 
 server.listen(port, host, () => {
   console.log(`server listening on http://${host}:${port}`);

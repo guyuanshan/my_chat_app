@@ -8,6 +8,10 @@ export async function getConversationMessages(query) {
     limit: String(query.limit ?? 10)
   });
 
+  if (query.cursor) {
+    searchParams.set("cursor", query.cursor);
+  }
+
   const response = await fetch(`${API_BASE_URL}/messages/conversation?${searchParams.toString()}`, {
     headers: createAuthHeaders()
   });
